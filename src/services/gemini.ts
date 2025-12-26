@@ -1,7 +1,10 @@
 // Gemini AI Service for EcoFy Waste Analysis
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
-// Models to try (in order of preference) - latest Gemini models with vision support
+/**
+ * List of Gemini models to attempt, in order of preference.
+ * Includes latest Flash models for speed and Pro models for complex reasoning.
+ */
 const GEMINI_MODELS = [
     "gemini-2.5-flash",       // Latest flash model
     "gemini-2.0-flash",       // Stable flash model
@@ -9,30 +12,49 @@ const GEMINI_MODELS = [
     "gemini-2.5-pro"          // Pro model with vision
 ];
 
+/**
+ * Generates the API URL for a specific model version
+ * @param model The model identifier string
+ */
 const getApiUrl = (model: string) =>
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
+/**
+ * Interface defining the structured response from the waste analysis.
+ * Used for strict typing of the AI's JSON output.
+ */
 export interface WasteAnalysis {
+    /** Name of the identified item */
     itemName: string;
+    /** Primary material composition */
     material: string;
+    /** Recommended waste stream category */
     category: "reuse" | "upcycle" | "recycle" | "dispose";
+    /** AI confidence score (0-1) */
     confidence: number;
+    /** Creative reuse suggestions */
     reuse: {
         ideas: string[];
         difficulty: "Easy" | "Medium" | "Hard";
         timeNeeded: string;
         environmentalBenefit: string;
     };
+    /** Proper recycling guidelines */
     recycle: {
         instructions: string[];
         safetyTips: string[];
         doNot: string[];
         canRecycle: boolean;
     };
+    /** Estimated carbon footprint reduction */
     carbonSaved: string;
+    /** Educational fun fact */
     funFact: string;
 }
 
+/**
+ * System prompt for the Vision API to ensure consistent JSON output
+ */
 const SYSTEM_PROMPT = `You are EcoFy Buddy, a friendly and knowledgeable waste management AI assistant. 
 Analyze the image of the waste item and provide a structured JSON response.
 
