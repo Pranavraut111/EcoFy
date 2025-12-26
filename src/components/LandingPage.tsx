@@ -103,7 +103,43 @@ const LandingPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Decorative Greenery Elements */}
+
+      {/* Top left leaf cluster */}
+      <div className="absolute top-0 left-0 text-6xl opacity-20 -rotate-12 select-none pointer-events-none">
+        🌿🍃🌱
+      </div>
+
+      {/* Top right corner vine */}
+      <div className="absolute top-10 right-20 text-4xl opacity-15 rotate-45 select-none pointer-events-none">
+        🌿
+      </div>
+
+      {/* Bottom left plants */}
+      <div className="absolute bottom-10 left-10 text-5xl opacity-20 select-none pointer-events-none">
+        🌱🌿
+      </div>
+
+      {/* Floating leaves animation */}
+      <div className="absolute top-1/4 left-10 text-3xl opacity-30 animate-bounce select-none pointer-events-none" style={{ animationDelay: '0s', animationDuration: '3s' }}>
+        🍃
+      </div>
+      <div className="absolute top-1/3 left-1/4 text-2xl opacity-20 animate-bounce select-none pointer-events-none" style={{ animationDelay: '1s', animationDuration: '4s' }}>
+        🌿
+      </div>
+      <div className="absolute bottom-1/4 left-20 text-2xl opacity-25 animate-bounce select-none pointer-events-none" style={{ animationDelay: '0.5s', animationDuration: '3.5s' }}>
+        🌱
+      </div>
+
+      {/* Decorative green circles/blobs */}
+      <div className="absolute top-20 left-1/3 w-32 h-32 bg-green-200 rounded-full blur-3xl opacity-30 pointer-events-none"></div>
+      <div className="absolute bottom-32 left-10 w-48 h-48 bg-emerald-200 rounded-full blur-3xl opacity-20 pointer-events-none"></div>
+      <div className="absolute top-1/2 left-5 w-24 h-24 bg-green-300 rounded-full blur-2xl opacity-25 pointer-events-none"></div>
+
+      {/* Bottom decorative grass/leaves strip */}
+      <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-r from-green-400 via-emerald-500 to-green-400 opacity-60"></div>
+
       {/* Voice Control Button */}
       <div className="fixed top-6 right-6 z-50">
         <Button
