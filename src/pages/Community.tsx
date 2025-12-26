@@ -1058,7 +1058,8 @@ const Community = () => {
                                         className="mb-3 min-h-[120px]"
                                     />
 
-                                    {/* Image Upload Section */}
+
+                                    {/* Image Upload Section - Disabled (requires Firebase Blaze plan)
                                     <div className="mb-4">
                                         <input
                                             ref={fileInputRef}
@@ -1097,6 +1098,7 @@ const Community = () => {
                                             </button>
                                         )}
                                     </div>
+                                    */}
 
                                     <div className="flex gap-2 mb-4 flex-wrap">
                                         {(["reuse", "recycle", "lifestyle", "diy"] as const).map((cat) => (
@@ -1124,7 +1126,7 @@ const Community = () => {
                                             ) : (
                                                 <Send className="w-4 h-4 mr-2" />
                                             )}
-                                            Post Tip {selectedImage ? "(+15 pts)" : "(+10 pts)"}
+                                            Post Tip (+10 pts)
                                         </Button>
                                         <Button
                                             variant="outline"
