@@ -1,5 +1,5 @@
 // Gemini AI Service for EcoFy Waste Analysis
-const GEMINI_API_KEY = "AIzaSyC_Ol5gR26jGfJU3ANk1yKyvm5OzTAmzGc";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 // Models to try (in order of preference) - latest Gemini models with vision support
 const GEMINI_MODELS = [
