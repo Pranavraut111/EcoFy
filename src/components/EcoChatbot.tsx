@@ -164,20 +164,34 @@ const EcoChatbot = () => {
                             EcoFy
                         </span>
                     </div>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-1 items-center flex-wrap">
+                        <Button
+                            variant="ghost"
+                            onClick={() => navigate("/eco-map")}
+                            className="text-green-700 hover:bg-green-100 text-sm px-3"
+                        >
+                            🗺️ Eco Map
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            onClick={() => navigate("/trip-calculator")}
+                            className="text-green-700 hover:bg-green-100 text-sm px-3"
+                        >
+                            🚗 Trip Calculator
+                        </Button>
                         <Button
                             variant="ghost"
                             onClick={() => navigate("/community")}
-                            className="text-green-700 hover:bg-green-100"
+                            className="text-green-700 hover:bg-green-100 text-sm px-3"
                         >
-                            Community
+                            👥 Community
                         </Button>
                         <Button
                             variant="ghost"
                             onClick={() => navigate("/carbon")}
-                            className="text-green-700 hover:bg-green-100"
+                            className="text-green-700 hover:bg-green-100 text-sm px-3"
                         >
-                            Carbon Calculator
+                            🌍 Carbon Calculator
                         </Button>
                         {user ? (
                             <Button
