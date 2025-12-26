@@ -6,10 +6,10 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
  * Includes latest Flash models for speed and Pro models for complex reasoning.
  */
 const GEMINI_MODELS = [
-    "gemini-2.5-flash",       // Latest flash model
-    "gemini-2.0-flash",       // Stable flash model
-    "gemini-flash-latest",    // Latest flash fallback
-    "gemini-2.5-pro"          // Pro model with vision
+    "gemini-1.5-flash",       // Latest stable flash model
+    "gemini-1.5-pro",         // Pro model for complex tasks
+    "gemini-pro-vision",      // Legacy vision model
+    "gemini-1.5-flash-latest" // Fallback
 ];
 
 /**
