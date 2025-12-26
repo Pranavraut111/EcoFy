@@ -54,7 +54,12 @@ import {
     Loader2,
     Check,
     Calendar,
-    Zap
+    Zap,
+    UserPlus,
+    Eye,
+    UserCheck,
+    UserX,
+    Search
 } from "lucide-react";
 
 interface Comment {
@@ -101,6 +106,28 @@ interface LeaderboardUser {
     itemsRecycled: number;
     rank: number;
 }
+
+interface FriendRequest {
+    id: string;
+    fromUserId: string;
+    fromUserName: string;
+    toUserId: string;
+    status: "pending" | "accepted" | "rejected";
+    createdAt: Date;
+}
+
+interface UserProfileData {
+    id: string;
+    name: string;
+    email: string;
+    totalPoints: number;
+    itemsRecycled: number;
+    tipsShared: number;
+    challengesJoined: number;
+    joinedAt: Date;
+    friends: string[];
+}
+
 
 const defaultChallenges = [
     {
@@ -157,7 +184,7 @@ const Community = () => {
         icon: "🌱",
         color: "from-emerald-500 to-green-600"
     });
-    const [activeTab, setActiveTab] = useState<"feed" | "challenges" | "leaderboard">("feed");
+    const [activeTab, setActiveTab] = useState<"feed" | "challenges" | "leaderboard" | "friends">("feed");
     const [filterCategory, setFilterCategory] = useState<string>("all");
     const [sortBy, setSortBy] = useState<"recent" | "popular">("recent");
     const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
@@ -172,6 +199,16 @@ const Community = () => {
         totalTips: 0,
         totalLikes: 0
     });
+
+    // Friends feature state
+    const [friends, setFriends] = useState<UserProfileData[]>([]);
+    const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+    const [allUsers, setAllUsers] = useState<LeaderboardUser[]>([]);
+    const [userSearch, setUserSearch] = useState("");
+    const [viewingProfile, setViewingProfile] = useState<UserProfileData | null>(null);
+    const [profileTips, setProfileTips] = useState<Tip[]>([]);
+    const [profileChallenges, setProfileChallenges] = useState<Challenge[]>([]);
+    const [sendingRequest, setSendingRequest] = useState<string | null>(null);
 
     // Fetch challenges from Firestore in real-time
     useEffect(() => {
@@ -273,6 +310,7 @@ const Community = () => {
                     });
                 });
                 setLeaderboard(users);
+                setAllUsers(users); // Also set for friend search
                 setCommunityStats(prev => ({ ...prev, totalMembers: users.length > 0 ? Math.max(users.length * 12, 100) : 150 }));
             } catch (error) {
                 console.error("Error fetching leaderboard:", error);
@@ -280,6 +318,259 @@ const Community = () => {
         };
         fetchLeaderboard();
     }, []);
+
+    // Fetch friend requests
+    useEffect(() => {
+        if (!user) return;
+
+        const q = query(
+            collection(db, "friendRequests"),
+            where("toUserId", "==", user.uid),
+            where("status", "==", "pending")
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const requests: FriendRequest[] = [];
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                requests.push({
+                    id: doc.id,
+                    fromUserId: data.fromUserId,
+                    fromUserName: data.fromUserName,
+                    toUserId: data.toUserId,
+                    status: data.status,
+                    createdAt: data.createdAt?.toDate() || new Date()
+                });
+            });
+            setFriendRequests(requests);
+        });
+
+        return () => unsubscribe();
+    }, [user]);
+
+    // Fetch friends list with real-time updates
+    useEffect(() => {
+        if (!user) return;
+
+        // Listen to current user's document for friends array changes
+        const userDocRef = doc(db, "users", user.uid);
+        const unsubscribe = onSnapshot(userDocRef, async (snapshot) => {
+            if (!snapshot.exists()) {
+                setFriends([]);
+                return;
+            }
+
+            const userData = snapshot.data();
+            const friendIds = userData.friends || [];
+
+            if (friendIds.length === 0) {
+                setFriends([]);
+                return;
+            }
+
+            // Fetch friend profiles
+            try {
+                const friendProfiles: UserProfileData[] = [];
+                for (const friendId of friendIds.slice(0, 20)) {
+                    const friendSnapshot = await getDocs(query(collection(db, "users"), where("__name__", "==", friendId)));
+                    if (!friendSnapshot.empty) {
+                        const data = friendSnapshot.docs[0].data();
+                        friendProfiles.push({
+                            id: friendId,
+                            name: data.name || "Anonymous",
+                            email: data.email || "",
+                            totalPoints: data.totalPoints || 0,
+                            itemsRecycled: data.itemsRecycled || 0,
+                            tipsShared: data.tipsShared || 0,
+                            challengesJoined: data.challengesJoined || 0,
+                            joinedAt: data.createdAt?.toDate() || new Date(),
+                            friends: data.friends || []
+                        });
+                    }
+                }
+                setFriends(friendProfiles);
+            } catch (error) {
+                console.error("Error fetching friends:", error);
+            }
+        });
+
+        return () => unsubscribe();
+    }, [user]);
+
+    // Send friend request
+    const handleSendFriendRequest = async (toUserId: string, toUserName: string) => {
+        if (!user) {
+            navigate("/auth");
+            return;
+        }
+
+        setSendingRequest(toUserId);
+        try {
+            // Check if request already exists
+            const existingQ = query(
+                collection(db, "friendRequests"),
+                where("fromUserId", "==", user.uid),
+                where("toUserId", "==", toUserId)
+            );
+            const existing = await getDocs(existingQ);
+
+            if (!existing.empty) {
+                toast({
+                    title: "Already sent",
+                    description: "You've already sent a request to this user",
+                });
+                setSendingRequest(null);
+                return;
+            }
+
+            await addDoc(collection(db, "friendRequests"), {
+                fromUserId: user.uid,
+                fromUserName: userProfile?.name || "Anonymous",
+                toUserId,
+                toUserName,
+                status: "pending",
+                createdAt: serverTimestamp()
+            });
+
+            toast({
+                title: "Friend request sent! 🤝",
+                description: `Request sent to ${toUserName}`,
+            });
+        } catch (error) {
+            console.error("Error sending friend request:", error);
+            toast({
+                title: "Error",
+                description: "Failed to send request. Please try again.",
+                variant: "destructive"
+            });
+        }
+        setSendingRequest(null);
+    };
+
+    // Accept friend request
+    const handleAcceptFriendRequest = async (request: FriendRequest) => {
+        if (!user) return;
+
+        try {
+            // Update request status
+            await updateDoc(doc(db, "friendRequests", request.id), {
+                status: "accepted"
+            });
+
+            // Add each other as friends
+            const myRef = doc(db, "users", user.uid);
+            const theirRef = doc(db, "users", request.fromUserId);
+
+            await updateDoc(myRef, {
+                friends: arrayUnion(request.fromUserId)
+            });
+            await updateDoc(theirRef, {
+                friends: arrayUnion(user.uid)
+            });
+
+            // Award points for making a friend
+            await updateDoc(myRef, { totalPoints: increment(5) });
+            await updateDoc(theirRef, { totalPoints: increment(5) });
+
+            toast({
+                title: "Friend added! 🎉",
+                description: `You and ${request.fromUserName} are now friends! +5 points`,
+            });
+        } catch (error) {
+            console.error("Error accepting friend request:", error);
+            toast({
+                title: "Error",
+                description: "Failed to accept request. Please try again.",
+                variant: "destructive"
+            });
+        }
+    };
+
+    // Reject friend request
+    const handleRejectFriendRequest = async (requestId: string) => {
+        try {
+            await updateDoc(doc(db, "friendRequests", requestId), {
+                status: "rejected"
+            });
+            toast({
+                title: "Request declined",
+                description: "Friend request has been declined.",
+            });
+        } catch (error) {
+            console.error("Error rejecting friend request:", error);
+        }
+    };
+
+    // View user profile
+    const handleViewProfile = async (userId: string) => {
+        try {
+            const userDoc = await getDocs(query(collection(db, "users"), where("__name__", "==", userId)));
+            if (userDoc.empty) return;
+
+            const data = userDoc.docs[0].data();
+            setViewingProfile({
+                id: userId,
+                name: data.name || "Anonymous",
+                email: data.email || "",
+                totalPoints: data.totalPoints || 0,
+                itemsRecycled: data.itemsRecycled || 0,
+                tipsShared: 0,
+                challengesJoined: 0,
+                joinedAt: data.createdAt?.toDate() || new Date(),
+                friends: data.friends || []
+            });
+
+            // Fetch their tips
+            const tipsQ = query(
+                collection(db, "communityTips"),
+                where("authorId", "==", userId),
+                orderBy("timestamp", "desc"),
+                limit(5)
+            );
+            const tipsSnap = await getDocs(tipsQ);
+            const userTips: Tip[] = [];
+            tipsSnap.forEach((doc) => {
+                const tipData = doc.data();
+                userTips.push({
+                    id: doc.id,
+                    authorId: tipData.authorId,
+                    authorName: tipData.authorName,
+                    title: tipData.title,
+                    content: tipData.content,
+                    imageUrl: tipData.imageUrl,
+                    category: tipData.category,
+                    likes: tipData.likes || [],
+                    comments: tipData.comments || [],
+                    saves: tipData.saves || [],
+                    timestamp: tipData.timestamp?.toDate() || new Date()
+                });
+            });
+            setProfileTips(userTips);
+
+            // Fetch their challenges
+            const userChallenges: Challenge[] = challenges.filter(c =>
+                c.participants.includes(userId)
+            );
+            setProfileChallenges(userChallenges);
+
+            // Update counts
+            setViewingProfile(prev => prev ? {
+                ...prev,
+                tipsShared: userTips.length,
+                challengesJoined: userChallenges.length
+            } : null);
+        } catch (error) {
+            console.error("Error viewing profile:", error);
+        }
+    };
+
+    // Filter users for search
+    const filteredUsers = allUsers.filter(u =>
+        u.name.toLowerCase().includes(userSearch.toLowerCase()) &&
+        u.id !== user?.uid &&
+        !friends.some(f => f.id === u.id)
+    );
+
 
     // Handle joining/leaving a challenge
     const handleJoinChallenge = async (challengeId: string) => {
@@ -642,22 +933,23 @@ const Community = () => {
 
                 {/* Tab Navigation */}
                 <div className="flex justify-center mb-8">
-                    <div className="bg-white rounded-xl p-1 shadow-sm border border-green-100 inline-flex">
+                    <div className="bg-white rounded-xl p-1 shadow-sm border border-green-100 inline-flex flex-wrap justify-center">
                         {[
                             { id: "feed", label: "Feed", icon: MessageSquare },
                             { id: "challenges", label: "Challenges", icon: Target },
-                            { id: "leaderboard", label: "Leaderboard", icon: Trophy }
+                            { id: "leaderboard", label: "Leaderboard", icon: Trophy },
+                            { id: "friends", label: "Friends", icon: Users }
                         ].map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as any)}
-                                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${activeTab === tab.id
+                                className={`flex items-center gap-2 px-4 sm:px-6 py-3 rounded-lg font-medium transition-all ${activeTab === tab.id
                                     ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
                                     : "text-gray-600 hover:bg-green-50"
                                     }`}
                             >
                                 <tab.icon className="w-4 h-4" />
-                                {tab.label}
+                                <span className="hidden sm:inline">{tab.label}</span>
                             </button>
                         ))}
                     </div>
@@ -1340,7 +1632,8 @@ const Community = () => {
                                 {leaderboard.map((leaderUser) => (
                                     <div
                                         key={leaderUser.id}
-                                        className={`flex items-center gap-4 p-4 hover:bg-green-50 transition-colors ${user?.uid === leaderUser.id ? "bg-green-50" : ""
+                                        onClick={() => handleViewProfile(leaderUser.id)}
+                                        className={`flex items-center gap-4 p-4 hover:bg-green-50 transition-colors cursor-pointer ${user?.uid === leaderUser.id ? "bg-green-50" : ""
                                             }`}
                                     >
                                         <div className="w-8 flex justify-center">
@@ -1358,9 +1651,12 @@ const Community = () => {
                                             </p>
                                             <p className="text-xs text-gray-500">{leaderUser.itemsRecycled} items recycled</p>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-bold text-green-600">{leaderUser.points}</p>
-                                            <p className="text-xs text-gray-500">points</p>
+                                        <div className="text-right flex items-center gap-3">
+                                            <div>
+                                                <p className="font-bold text-green-600">{leaderUser.points}</p>
+                                                <p className="text-xs text-gray-500">points</p>
+                                            </div>
+                                            <Eye className="w-4 h-4 text-gray-400" />
                                         </div>
                                     </div>
                                 ))}
@@ -1374,7 +1670,311 @@ const Community = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Friends Tab */}
+                {activeTab === "friends" && (
+                    <div className="max-w-4xl mx-auto space-y-6">
+                        {!user ? (
+                            <div className="bg-white rounded-2xl p-8 text-center shadow-lg border border-green-100">
+                                <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">Connect with Eco Warriors</h3>
+                                <p className="text-gray-600 mb-4">Login to add friends and see their eco activities!</p>
+                                <Button onClick={() => navigate("/auth")} className="bg-green-600 hover:bg-green-700">
+                                    Login to Continue
+                                </Button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Friend Requests */}
+                                {friendRequests.length > 0 && (
+                                    <div className="bg-white rounded-2xl p-6 shadow-lg border border-orange-200">
+                                        <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                                            <UserPlus className="w-5 h-5 text-orange-500" />
+                                            Friend Requests ({friendRequests.length})
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {friendRequests.map((request) => (
+                                                <div key={request.id} className="flex items-center justify-between p-4 bg-orange-50 rounded-xl border border-orange-100">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
+                                                            {request.fromUserName.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-medium text-gray-800">{request.fromUserName}</p>
+                                                            <p className="text-xs text-gray-500">wants to be your friend</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => handleAcceptFriendRequest(request)}
+                                                            className="bg-green-500 hover:bg-green-600"
+                                                        >
+                                                            <UserCheck className="w-4 h-4 mr-1" />
+                                                            Accept
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleRejectFriendRequest(request.id)}
+                                                        >
+                                                            <UserX className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Add Friends Search */}
+                                <div className="bg-white rounded-2xl p-6 shadow-lg border border-green-100">
+                                    <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                                        <UserPlus className="w-5 h-5 text-green-500" />
+                                        Add Friends
+                                    </h3>
+                                    <div className="relative mb-4">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                        <Input
+                                            placeholder="Search users by name..."
+                                            value={userSearch}
+                                            onChange={(e) => setUserSearch(e.target.value)}
+                                            className="pl-10"
+                                        />
+                                    </div>
+                                    {userSearch && (
+                                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                                            {filteredUsers.length > 0 ? (
+                                                filteredUsers.slice(0, 10).map((u) => (
+                                                    <div key={u.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-green-50 transition-colors">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-bold">
+                                                                {u.name.charAt(0)}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-medium text-gray-800">{u.name}</p>
+                                                                <p className="text-xs text-gray-500">{u.points} points</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handleViewProfile(u.id)}
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={() => handleSendFriendRequest(u.id, u.name)}
+                                                                disabled={sendingRequest === u.id}
+                                                                className="bg-green-500 hover:bg-green-600"
+                                                            >
+                                                                {sendingRequest === u.id ? (
+                                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                                ) : (
+                                                                    <UserPlus className="w-4 h-4" />
+                                                                )}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-center text-gray-500 py-4">No users found</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* My Friends List */}
+                                <div className="bg-white rounded-2xl p-6 shadow-lg border border-green-100">
+                                    <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                                        <Users className="w-5 h-5 text-green-500" />
+                                        My Friends ({friends.length})
+                                    </h3>
+                                    {friends.length > 0 ? (
+                                        <div className="grid sm:grid-cols-2 gap-4">
+                                            {friends.map((friend) => (
+                                                <button
+                                                    key={friend.id}
+                                                    onClick={() => handleViewProfile(friend.id)}
+                                                    className="flex items-center gap-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 hover:shadow-md transition-all text-left"
+                                                >
+                                                    <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                                                        {friend.name.charAt(0)}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="font-semibold text-gray-800">{friend.name}</p>
+                                                        <p className="text-sm text-green-600">{friend.totalPoints} points</p>
+                                                        <p className="text-xs text-gray-500">{friend.itemsRecycled} items recycled</p>
+                                                    </div>
+                                                    <Eye className="w-5 h-5 text-gray-400" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                            <p>No friends yet!</p>
+                                            <p className="text-sm mt-1">Search for users above to add friends</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* Profile Modal */}
+            {viewingProfile && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
+                    <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
+                        {/* Profile Header */}
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 text-white rounded-t-2xl">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center text-3xl font-bold">
+                                    {viewingProfile.name.charAt(0)}
+                                </div>
+                                <button
+                                    onClick={() => setViewingProfile(null)}
+                                    className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <h2 className="text-2xl font-bold">{viewingProfile.name}</h2>
+                            <p className="text-white/80 text-sm">
+                                Member since {viewingProfile.joinedAt.toLocaleDateString()}
+                            </p>
+                        </div>
+
+                        {/* Profile Stats */}
+                        <div className="p-6">
+                            <div className="grid grid-cols-4 gap-3 mb-6">
+                                <div className="text-center p-3 bg-yellow-50 rounded-xl">
+                                    <Trophy className="w-5 h-5 text-yellow-500 mx-auto mb-1" />
+                                    <p className="text-lg font-bold text-gray-800">{viewingProfile.totalPoints}</p>
+                                    <p className="text-xs text-gray-500">Points</p>
+                                </div>
+                                <div className="text-center p-3 bg-green-50 rounded-xl">
+                                    <Leaf className="w-5 h-5 text-green-500 mx-auto mb-1" />
+                                    <p className="text-lg font-bold text-gray-800">{viewingProfile.itemsRecycled}</p>
+                                    <p className="text-xs text-gray-500">Recycled</p>
+                                </div>
+                                <div className="text-center p-3 bg-blue-50 rounded-xl">
+                                    <MessageSquare className="w-5 h-5 text-blue-500 mx-auto mb-1" />
+                                    <p className="text-lg font-bold text-gray-800">{viewingProfile.tipsShared}</p>
+                                    <p className="text-xs text-gray-500">Tips</p>
+                                </div>
+                                <div className="text-center p-3 bg-purple-50 rounded-xl">
+                                    <Target className="w-5 h-5 text-purple-500 mx-auto mb-1" />
+                                    <p className="text-lg font-bold text-gray-800">{viewingProfile.challengesJoined}</p>
+                                    <p className="text-xs text-gray-500">Challenges</p>
+                                </div>
+                            </div>
+
+                            {/* Active Challenges */}
+                            {profileChallenges.length > 0 && (
+                                <div className="mb-4">
+                                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                        <Target className="w-4 h-4 text-purple-500" />
+                                        Active Challenges
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {profileChallenges.slice(0, 3).map((challenge) => (
+                                            <div key={challenge.id} className={`p-3 rounded-xl bg-gradient-to-r ${challenge.color} text-white`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-lg">{challenge.icon}</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-sm">{challenge.title}</p>
+                                                        <p className="text-xs text-white/80">+{challenge.points} pts</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Recent Tips with Images */}
+                            {profileTips.length > 0 && (
+                                <div className="mb-4">
+                                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4 text-green-500" />
+                                        Recent Activity
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {profileTips.map((tip) => (
+                                            <div key={tip.id} className="p-3 bg-gray-50 rounded-xl">
+                                                <div className="flex gap-3">
+                                                    {tip.imageUrl && (
+                                                        <img
+                                                            src={tip.imageUrl}
+                                                            alt=""
+                                                            className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                                                        />
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className={`text-xs px-2 py-0.5 rounded-full ${getCategoryColor(tip.category)}`}>
+                                                                {getCategoryEmoji(tip.category)} {tip.category}
+                                                            </span>
+                                                        </div>
+                                                        <p className="font-medium text-gray-800 text-sm">{tip.title}</p>
+                                                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{tip.content}</p>
+                                                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                                            <span className="flex items-center gap-1">
+                                                                <Heart className="w-3 h-3" /> {tip.likes.length}
+                                                            </span>
+                                                            <span className="flex items-center gap-1">
+                                                                <MessageSquare className="w-3 h-3" /> {tip.comments.length}
+                                                            </span>
+                                                            <span>{formatTimeAgo(tip.timestamp)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Empty state */}
+                            {profileTips.length === 0 && profileChallenges.length === 0 && (
+                                <div className="text-center py-6 text-gray-500">
+                                    <Leaf className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                                    <p className="text-sm">No activity yet</p>
+                                    <p className="text-xs">This user hasn't shared any tips or joined challenges</p>
+                                </div>
+                            )}
+
+                            {/* Add Friend Button */}
+                            {user && viewingProfile.id !== user.uid && !friends.some(f => f.id === viewingProfile.id) && (
+                                <Button
+                                    onClick={() => handleSendFriendRequest(viewingProfile.id, viewingProfile.name)}
+                                    disabled={sendingRequest === viewingProfile.id}
+                                    className="w-full mt-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                                >
+                                    {sendingRequest === viewingProfile.id ? (
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                        <UserPlus className="w-4 h-4 mr-2" />
+                                    )}
+                                    Add Friend
+                                </Button>
+                            )}
+
+                            {friends.some(f => f.id === viewingProfile.id) && (
+                                <div className="mt-4 text-center p-3 bg-green-100 rounded-xl text-green-700 font-medium flex items-center justify-center gap-2">
+                                    <UserCheck className="w-5 h-5" />
+                                    You're friends!
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
